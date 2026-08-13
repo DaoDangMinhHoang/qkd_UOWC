@@ -11,7 +11,7 @@
 
 </div>
 
-![System block diagram](python/Images/report/fig00_system_block.png)
+![System block diagram](python/report/fig00_system_block.png)
 
 ---
 
