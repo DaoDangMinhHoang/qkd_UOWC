@@ -9,9 +9,7 @@
 [![HDL](https://img.shields.io/badge/HDL-Verilog--2001-lightgrey)](#repository-layout)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB)](#requirements)
 
-</div>
 
-![System block diagram](python/report/fig00_system_block.png)
 
 ---
 
@@ -46,7 +44,7 @@ not transfer.
 This repository contains a complete hardware testbed for that regime:
 
 - **A synthesizable UWOC channel emulator** (`uwoc_channel.v`) implementing composite
-  fading `h = L(d,λ,water) · h_s · h_o` plus a photon-detection stage, driven by ROMs
+  fading `h = h_l(d,λ;w) · h_f`, `h_f = h_s · h_o`, plus a photon-detection stage, driven by ROMs
   generated from a numerically validated physics model.
 - **A closed-loop adaptive controller** (`adaptive_controller.v`) that retunes photon
   intensity, basis bias, slot width and **wavelength** in real time from on-chip channel
