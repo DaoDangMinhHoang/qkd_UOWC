@@ -1,5 +1,3 @@
-<div align="center">
-
 # Adaptive BB84 QKD over an Underwater Optical Channel
 
 **A single-FPGA, real-time emulator and closed-loop controller for discrete-variable QKD through water.**
