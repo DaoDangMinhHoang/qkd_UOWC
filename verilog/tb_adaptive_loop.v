@@ -1,33 +1,38 @@
 // ============================================================
-// TESTBENCH — vong kin uwoc_channel + channel_monitor + adaptive_controller
+// TESTBENCH — closed loop: uwoc_channel + channel_monitor + adaptive_controller
 // ============================================================
-// Kiem chung BUOC 3. Bo qua OOK TX/RX va FSM cua top_module, noi truc tiep
-// su kien muc qubit tu kenh vao monitor — du de kiem tra vong dieu khien.
+// Validates STEP 3. Skips the OOK TX/RX and the top_module FSM, wiring the
+// qubit-level events from the channel straight into the monitor — enough to
+// exercise the control loop.
 //
-// TEST A — SNR chuan hoa: o diem lam viec danh dinh (mu_level = 8 = mu_ref)
-//          snr_level phai ~ 128 BAT KE loai nuoc / cu ly. Day chinh la muc
-//          dich cua viec chuan hoa: loai bo suy hao tinh exp(-c*d).
-// TEST B — cong window_valid: cu ly xa -> qua it click -> window_valid = 0
-//          -> controller PHAI GIU NGUYEN mode thay vi doi theo nhieu ban.
-// TEST C — pham vi hoat dong: mode phai xau dan khi cu ly tang.
-// TEST D — leo doi buoc song: harbor phai hoi tu ve red (lam=2),
-//          clear ocean phai giu blue (lam=0).
-// TEST E — [v14] CHONG KET LAMBDA. Trong MOT diem do (khong reset), bo leo doi
-//          van dinh ky thu buoc song ung vien. O clear ocean 15 m, ung vien
-//          650 nm lam P_click roi 27 lan -> cua so het hop le -> may trang thai
-//          lambda (nam trong nhanh window_valid) DUNG HAN va giu nguyen buoc
-//          song hong. Day chinh la loi da pha nat cac phien do qua dem:
-//          4 diem cuoi cua phien 2026-08-09 do duoc P_click = 2.03/1.42/1.37/
-//          1.35e-5, dung bang du doan cua 650 nm (1.94/1.41/1.32/1.30e-5).
-//          TEST E doi hoi phan lon cua so van HOP LE sau 60 cua so.
+// TEST A — SNR normalisation: at the nominal operating point (mu_level = 8 =
+//          mu_ref) snr_level must be ~128 REGARDLESS of water type / distance.
+//          That is the whole point of the normalisation: remove the static
+//          exp(-c*d) attenuation.
+// TEST B — window_valid gate: long distance -> too few clicks -> window_valid = 0
+//          -> the controller MUST HOLD its mode instead of chasing noise.
+// TEST C — operating range: the mode must degrade as distance grows.
+// TEST D — wavelength hill climbing: harbor must converge to red (lam=2),
+//          clear ocean must stay on blue (lam=0).
+// TEST E — [v14] LAMBDA LOCK-UP GUARD. Within ONE measurement point (no reset)
+//          the hill climber still probes candidate wavelengths periodically. In
+//          clear ocean at 15 m the 650 nm candidate drops P_click by 27x -> the
+//          window stops being valid -> the lambda state machine (which sits
+//          inside the window_valid branch) STALLS FOREVER and keeps the bad
+//          wavelength. This is exactly the bug that wrecked the overnight
+//          measurement sessions: the last 4 points of the 2026-08-09 session
+//          measured P_click = 2.03/1.42/1.37/1.35e-5, matching the 650 nm
+//          prediction (1.94/1.41/1.32/1.30e-5) precisely.
+//          TEST E requires most windows to stay VALID across 60 windows.
 // ============================================================
 `timescale 1ns / 1ps
 
 module tb_adaptive_loop;
 
-    // Cua so rut ngan (2^15) de mo phong nhanh; NEXP_LOG2 van la 16 (kich
-    // thuoc cua so da dung khi sinh LUT) va monitor tu bu chenh lech bang
-    // dich bit — nho vay KHONG phai sinh lai ROM cho rieng mo phong.
+    // Shortened window (2^15) to keep the simulation fast; NEXP_LOG2 stays 16
+    // (the window size used when the LUT was generated) and the monitor
+    // compensates for the difference with a bit shift — so the ROM does NOT
+    // have to be regenerated just for simulation.
     localparam AW   = 15;
     localparam NEXP = 16;
     localparam integer WIN = (1 << AW);
@@ -35,31 +40,32 @@ module tb_adaptive_loop;
     reg clk = 1'b0, rst_n = 1'b0;
     always #10 clk = ~clk;
 
-    // ---- cau hinh ----
+    // ---- configuration ----
     reg  [1:0] water     = 2'd0;
     reg  [3:0] dist      = 4'd0;
     reg  [2:0] turb      = 3'd1;
     reg        adaptive  = 1'b0;
     reg  [3:0] man_power = 4'd8;
 
-    // [v14] Xung 0x01 cua host: fpga_collect.py goi Link.configure() truoc MOI
-    // diem do, va byte 0x01 cuoi cung do sinh ra pc_reset_req -> vao ca
-    // channel_monitor.clear lan adaptive_controller.cfg_rst. TB phai mo phong
-    // dung the, neu khong no dang kiem tra mot kich ban khong bao gio xay ra.
+    // [v14] Host 0x01 pulse: fpga_collect.py calls Link.configure() before EVERY
+    // measurement point, and the trailing 0x01 byte raises pc_reset_req -> which
+    // drives both channel_monitor.clear and adaptive_controller.cfg_rst. The TB
+    // must model this exactly, otherwise it is testing a scenario that never
+    // happens.
     reg        cfg_rst   = 1'b0;
 
-    // ---- kenh ----
+    // ---- channel ----
     reg         sample_en = 1'b0;
     wire        click, no_click, err_inject;
     wire [15:0] nexp_inv;
     wire [2:0]  cur_level;
     wire [11:0] h_s, h_o, h_f;
 
-    // ---- controller -> kenh ----
+    // ---- controller -> channel ----
     wire [3:0] adapt_power;
     wire [7:0] adapt_basis;
-    wire [1:0] adapt_lambda;      // lambda dang phat (co the la ung vien dang do)
-    wire [1:0] adapt_lam_best;    // lambda DA HOI TU
+    wire [1:0] adapt_lambda;      // lambda being transmitted (may be a candidate under probe)
+    wire [1:0] adapt_lam_best;    // CONVERGED lambda
     wire [1:0] adapt_mode;
     wire       tx_allowed;
     wire [7:0] key_rate, stale;
@@ -90,7 +96,7 @@ module tb_adaptive_loop;
         .stats_rst(1'b0)
     );
 
-    // ---- mo hinh chon basis (lam trong TB) ----
+    // ---- basis-selection model (done inside the TB) ----
     reg [15:0] lfsr_b = 16'hACE1;
     always @(posedge clk)
         lfsr_b <= {lfsr_b[14:0], lfsr_b[15]^lfsr_b[13]^lfsr_b[12]^lfsr_b[10]};
@@ -140,8 +146,9 @@ module tb_adaptive_loop;
 
     integer i, fails;
 
-    // window_pulse chi cao DUNG 1 chu ky va roi vao khe giua hai lan lay mau
-    // cua pulse_qubit -> phai dem bang always rieng, khong the poll trong task.
+    // window_pulse is high for EXACTLY 1 cycle and falls in the gap between two
+    // pulse_qubit samples -> it must be counted in a dedicated always block; it
+    // cannot be polled from inside a task.
     integer win_count, valid_count;
     initial begin win_count = 0; valid_count = 0; end
     always @(posedge clk) if (win_pulse) begin
@@ -149,7 +156,7 @@ module tb_adaptive_loop;
         if (win_valid) valid_count = valid_count + 1;
     end
 
-    // Bo phat qubit chay lien tuc, doc lap voi luong dieu khien cua TB.
+    // Free-running qubit generator, independent of the TB control flow.
     initial begin
         sample_en = 1'b0;
         @(posedge rst_n);
@@ -159,7 +166,7 @@ module tb_adaptive_loop;
         end
     end
 
-    // Cho den khi da qua n_win cua so
+    // Wait until n_win windows have elapsed
     task run_windows;
         input integer n_win;
         integer target;
@@ -170,9 +177,10 @@ module tb_adaptive_loop;
     end
     endtask
 
-    // [v14] Bat dau mot DIEM DO moi, dung nhu Link.configure() cua host: nap cau
-    // hinh roi phat xung 0x01. Khong co xung nay, trang thai cua controller (mode,
-    // lambda, stale) chay tiep tu diem truoc — va mot diem hong keo theo ca phien.
+    // [v14] Start a new MEASUREMENT POINT exactly the way the host's
+    // Link.configure() does: load the configuration, then emit the 0x01 pulse.
+    // Without that pulse the controller state (mode, lambda, stale) carries over
+    // from the previous point — and one bad point then poisons the whole session.
     task new_point;
         input [1:0] w;
         input [3:0] d;
@@ -212,7 +220,7 @@ module tb_adaptive_loop;
         begin : testA
             integer nA, okA;
             okA = 0; nA = 0;
-            // clear ocean 5m / 15m / 25m ; coastal 2m / 6m ; harbor 0.5m
+            // clear ocean 5 m / 15 m / 25 m ; coastal 2 m / 6 m ; harbor 0.5 m
             for (i = 0; i < 6; i = i + 1) begin
                 case (i)
                   0: begin water=2'd0; dist=4'd0; end
@@ -226,7 +234,7 @@ module tb_adaptive_loop;
                 run_windows(3);
                 show("A:");
                 nA = nA + 1;
-                // chap nhan 96..176 (128 +/- 25%): lay mau huu han + lam tron ROM
+                // accept 96..176 (128 +/- 25%): finite sampling + ROM rounding
                 if (snr >= 96 && snr <= 176) okA = okA + 1;
                 else $display("     *** snr=%0d nam ngoai [96,176]", snr);
             end
@@ -242,7 +250,7 @@ module tb_adaptive_loop;
         $display("");
         $display("[TEST B] Cong window_valid: cu ly xa -> khong du click");
         adaptive = 1'b1;
-        water = 2'd0; dist = 4'd10; turb = 3'd1;    // clear ocean 55 m: link chet
+        water = 2'd0; dist = 4'd10; turb = 3'd1;    // clear ocean 55 m: dead link
         run_windows(6);
         show("B:");
         if (!win_valid && stale > 0) begin
@@ -252,7 +260,7 @@ module tb_adaptive_loop;
             $display("  *** FAIL: ky vong window_valid=0 o cu ly da chet link");
             fails = fails + 1;
         end
-        // sau nhieu cua so im lang -> phai ve PAUSE
+        // after many silent windows -> must fall back to PAUSE
         run_windows(10);
         show("B2:");
         if (adapt_mode == 2'd3)
@@ -272,9 +280,10 @@ module tb_adaptive_loop;
             dist = 4'd2; run_windows(12); show("C:"); m2 = adapt_mode;
             dist = 4'd4; run_windows(12); show("C:"); m4 = adapt_mode;
             dist = 4'd6; run_windows(12); show("C:"); m6 = adapt_mode;
-            // Yeu cau CHAT: o cu ly xa (35 m, ngoai d_max ~28 m cua mo hinh)
-            // controller phai chuyen HAN sang CONSERVATIVE tro len, khong duoc
-            // ngoi yen o MODERATE trong khi khong bao gio du mau de ket luan.
+            // STRICT requirement: at long range (35 m, beyond the model's
+            // d_max ~28 m) the controller must move DEFINITIVELY to CONSERVATIVE
+            // or worse; it must not sit at MODERATE while it never collects
+            // enough samples to conclude anything.
             if (m6 > m0 && m6 >= 2)
                 $display("  [OK] mode(5m)=%0d -> mode(35m)=%0d: xau dan va dat >= CONSERVATIVE",
                          m0, m6);
@@ -294,8 +303,8 @@ module tb_adaptive_loop;
         new_point(2'd2, 4'd0, 3'd1);                // harbor 0.5 m
         run_windows(60);
         show("D harbor:");
-        // Kiem tra lambda_best (ket qua HOI TU), khong phai lambda_sel — trong
-        // luc dang do thi lambda_sel tam thoi la lambda ung vien.
+        // Check lambda_best (the CONVERGED result), not lambda_sel — while a
+        // probe is running lambda_sel temporarily holds the candidate lambda.
         if (adapt_lam_best == 2'd2)
             $display("  [OK] harbor hoi tu ve lam_best=2 (650 nm red)");
         else begin
@@ -304,9 +313,10 @@ module tb_adaptive_loop;
             fails = fails + 1;
         end
 
-        // Diem do KE TIEP -> host phat 0x01. Neu bo qua buoc nay, lam_best = 2
-        // (dung cho harbor) chay tiep sang clear ocean, o do 650 nm giet link
-        // ngay lap tuc va khong con cua so hop le nao de bo leo doi tu sua.
+        // NEXT measurement point -> the host emits 0x01. Skip this step and
+        // lam_best = 2 (correct for harbor) carries over into clear ocean, where
+        // 650 nm kills the link immediately and no valid window is left for the
+        // hill climber to recover from.
         new_point(2'd0, 4'd2, 3'd1);                // clear ocean 15 m
         run_windows(60);
         show("D clear:");
@@ -333,9 +343,9 @@ module tb_adaptive_loop;
             nwin = win_count - w0;
             show("E:");
             $display("  cua so hop le: %0d/%0d", nval, nwin);
-            // Voi loi cu: cua so dau tien roi vao 650 nm la het hop le VINH VIEN
-            // -> nval dung o mot vai chuc phan tram dau. Voi ban va: chi mat dung
-            // 1 cua so moi chu ky do 650 nm.
+            // With the old bug: the first window that lands on 650 nm becomes
+            // invalid FOREVER -> nval stops at the first few tens of percent.
+            // With the fix: only exactly 1 window is lost per 650 nm probe cycle.
             if (nval * 4 >= nwin * 3 && adapt_lam_best == 2'd0)
                 $display("  [OK] %0d/%0d cua so hop le va lam_best=0 -> khong bi ket",
                          nval, nwin);
