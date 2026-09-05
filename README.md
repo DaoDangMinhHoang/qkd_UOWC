@@ -116,7 +116,7 @@ every measured point is scored against.
 
 **Table 1 — Turbulence levels implemented in hardware** (σ²<sub>ho</sub> at the 20 m, 450 nm reference):
 
-| Level | | ε [m²/s³] | χ_T [K²/s] | ω | σ²<sub>ho</sub> | Branch |
+| Level | Regime | ε [m²/s³] | χ_T [K²/s] | ω | σ²<sub>ho</sub> | Branch |
 |---|---|---:|---:|---:|---:|---|
 | L0 | off | — | 0 | — | 0 | — |
 | L1 | very weak | 10⁻² | 2.21 × 10⁻⁷ | −5 | 0.02 | log-normal |
@@ -135,13 +135,13 @@ e_pol(d) = min{ e₀ + k_s (1 − exp(−b_w(λ) d)), 0.5 }
 R        = q · f_rep · P_click · max{ 0, 1 − 2 H₂(QBER) }
 ```
 
-| Parameter | Value | | Parameter | Value |
-|---|---|---|---|---|
-| μ (mean photon number) | 0.1 | | e₀ / k_s | 0.01 / 0.04 |
-| η_det | 0.18 | | Dark / background counts | 60 Hz / 200 Hz |
-| D_rx | 5.08 cm | | Gate width → Y₀ | 50 ns → 1.3 × 10⁻⁵ |
-| θ_div | 1 mrad | | f_rep (enters `R` only) | 10 MHz |
-| F (effective attenuation) | 0.85 | | τ_coh → block length | 5 ms → 65 536 attempts |
+| Parameter | Value | Parameter | Value |
+|---|---|---|---|
+| μ (mean photon number) | 0.1 | e₀ / k_s | 0.01 / 0.04 |
+| η_det | 0.18 | Dark / background counts | 60 Hz / 200 Hz |
+| D_rx | 5.08 cm | Gate width → Y₀ | 50 ns → 1.3 × 10⁻⁵ |
+| θ_div | 1 mrad | f_rep (enters `R` only) | 10 MHz |
+| F (effective attenuation) | 0.85 | τ_coh → block length | 5 ms → 65 536 attempts |
 
 A point is declared **secure** only when the one-sided **95 % Clopper–Pearson upper bound** on QBER
 stays below the 11 % Shor–Preskill threshold — never the point estimate.
@@ -354,14 +354,15 @@ where it stopped.
 
 ### 5.1 Device and resources
 
-| | | | | |
-|---|---|---|---|---|
-| FPGA | Altera Cyclone II **EP2C20F484C7** | | Logic elements | 6 393 / 18 752 (**34 %**) — 6 198 comb. + 1 379 reg. |
-| Board | Terasic DE1 | | 9-bit multipliers | 8 / 52 (15 %) |
-| System clock | 50 MHz | | Memory bits | 7 104 / 239 616 (3 %) |
-| Host interface | RS-232, 115 200 baud, 8N1 | | Pins | 135 / 315 (43 %) |
+| Item | Value | Resource | Used / available |
+|---|---|---|---|
+| FPGA | Altera Cyclone II **EP2C20F484C7** | Logic elements | 6 393 / 18 752 (**34 %**) |
+| Board | Terasic DE1 | — combinational / registers | 6 198 / 1 379 |
+| System clock | 50 MHz | 9-bit multipliers | 8 / 52 (15 %) |
+| Host interface | RS-232, 115 200 baud, 8N1 | Memory bits | 7 104 / 239 616 (3 %) |
+| Toolchain | Quartus II 13.0.1, `[v14]` build | Pins | 135 / 315 (43 %) |
 
-Figures reported by Quartus II 13.0.1 for the `[v14]` build in `verilog/output_files/`.
+Resource figures come from the fitter report in `verilog/output_files/`.
 
 > [!WARNING]
 > **The current build does not meet timing at 50 MHz as constrained** (slow-model Fmax **34.43 MHz**,
@@ -410,16 +411,16 @@ reset defaults.
 
 ### 5.4 LED indicators
 
-| LED | Meaning | | LED | Meaning |
-|---|---|---|---|---|
-| `LEDR[1:0]` | TX qubit (basis, data) | | `LEDG[1:0]` | Adaptive mode (00 AGG, 01 MOD, 10 CON, 11 PAUSE) |
-| `LEDR[3:2]` | RX qubit | | `LEDG[2]` | Transmission allowed |
-| `LEDR[4]` | TX active | | `LEDG[3]` | Channel emulator enabled |
-| `LEDR[5]` | RX active | | `LEDG[4]` | Photon lost (no click) |
-| `LEDR[6]` | Signal detected | | `LEDG[5]` | Window has enough samples |
-| `LEDR[7]` | Basis match | | `LEDG[6]` | Adaptive control enabled |
-| `LEDR[8]` | Eavesdropper active | | `LEDG[7]` | ⚠ Command FIFO overflowed |
-| `LEDR[9]` | PC input mode | | | |
+| Red LED | Meaning | Green LED | Meaning |
+|---|---|---|---|
+| `LEDR[1:0]` | TX qubit (basis, data) | `LEDG[1:0]` | Adaptive mode (00 AGG, 01 MOD, 10 CON, 11 PAUSE) |
+| `LEDR[3:2]` | RX qubit | `LEDG[2]` | Transmission allowed |
+| `LEDR[4]` | TX active | `LEDG[3]` | Channel emulator enabled |
+| `LEDR[5]` | RX active | `LEDG[4]` | Photon lost (no click) |
+| `LEDR[6]` | Signal detected | `LEDG[5]` | Window has enough samples |
+| `LEDR[7]` | Basis match | `LEDG[6]` | Adaptive control enabled |
+| `LEDR[8]` | Eavesdropper active | `LEDG[7]` | ⚠ Command FIFO overflowed |
+| `LEDR[9]` | PC input mode | — | — |
 
 **`LEDG[7]` is a data-validity flag**: it lights when the PC sent commands faster than the FPGA could
 consume them, so that batch's `P_click` and sifted-bit count are artificially low. Reduce `--chunk`
