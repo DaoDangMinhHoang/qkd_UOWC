@@ -840,8 +840,6 @@ Dong *et al.*, *Appl. Opt.* **61**(15), 2022 ·
 Kebapci *et al.*, *IEEE Photon. J.* **15**(4), 2023 ·
 Clopper & Pearson, *Biometrika* **26**(4), 1934.
 
-Full bibliography in [`overleaf/UWOC_QKD/rivf_2026.tex`](overleaf/UWOC_QKD/rivf_2026.tex).
-
 ### License
 
 No formal open-source license has been granted yet. Please contact the authors before commercial reuse
