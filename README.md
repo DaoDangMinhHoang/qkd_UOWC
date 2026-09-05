@@ -63,8 +63,7 @@ record per qubit over UART, and stays **outside** the control loop.
 ![Testbed architecture: TRNG cluster, QKD datapath with the UWOC channel emulator, and the monitor/adaptive-control block](Images/QKD_UWOC_Block.png)
 
 <div align="center"><sub><b>Figure 1</b> — Single-Cyclone II testbed: BB84 core, synthesizable UWOC channel
-emulator, on-chip monitor, and closed-loop adaptive controller. Vector source:
-<a href="Images/QKD_UWOC_Block.pdf"><code>Images/QKD_UWOC_Block.pdf</code></a>.</sub></div>
+emulator, on-chip monitor, and closed-loop adaptive controller.
 
 | Stage | Module | Role |
 |---|---|---|
