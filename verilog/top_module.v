@@ -349,7 +349,7 @@ module top_module (
     assign gpio_tx_out = tx_powered;
 
     // ============================
-    // [v10] Channel: UWOC (thay gamma_gamma_channel)
+    // [v10] Channel: UWOC
     // ============================
     wire channel_in = pc_input_mode ? tx_serial :    // [v9] PC mode: always internal
                       SW[9]        ? gpio_rx_in :    // laser mode in non-PC
